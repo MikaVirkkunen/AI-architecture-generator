@@ -49,47 +49,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   return { xml, architecture, parsed };
 }
 
-/**
- * Generate from a pre-built architecture object (e.g., from JSON template)
- */
-export function generateFromArchitecture(arch: Architecture): string {
-  // Handle different architecture formats
-  const normalizedArch = normalizeArchitecture(arch);
-  const builder = new DrawIOBuilder();
-  return builder.generate(normalizedArch);
-}
 
-/**
- * Normalize architecture to handle various input formats
- */
-function normalizeArchitecture(arch: Architecture): Architecture {
-  // If we have regions at top level, that's the multi-region format
-  if (arch.regions && arch.regions.length > 0) {
-    return arch;
-  }
-  
-  // If we have a subscription, that's the simple format
-  if (arch.subscription) {
-    return arch;
-  }
-  
-  // If we have subscriptions array, use first one
-  if (arch.subscriptions && arch.subscriptions.length > 0) {
-    return {
-      ...arch,
-      subscription: arch.subscriptions[0],
-    };
-  }
-  
-  // Fallback: create empty subscription
-  return {
-    ...arch,
-    subscription: {
-      name: 'Azure Subscription',
-      resourceGroups: [],
-    },
-  };
-}
 
 /**
  * Create an AI provider instance

@@ -77,17 +77,29 @@ app.get('/api/auth/status', (_req, res) => {
 
 /**
  * GET /api/tenants
- * List available tenants
+ * List available tenants with friendly display names
  */
 app.get('/api/tenants', (_req, res) => {
+  // az account tenant list doesn't return friendly names,
+  // so we cross-reference with az account list which has tenantDisplayName
   const tenants = azCli('account tenant list');
   if (!tenants) {
     return res.status(401).json({ error: 'Not authenticated. Run "az login" first.' });
   }
+
+  // Build a tenant name map from subscriptions (which have tenantDisplayName)
+  const subs = azCli('account list') || [];
+  const nameMap = new Map<string, string>();
+  for (const s of subs) {
+    if (s.tenantId && s.tenantDisplayName && !nameMap.has(s.tenantId)) {
+      nameMap.set(s.tenantId, s.tenantDisplayName);
+    }
+  }
+
   res.json(
     tenants.map((t: any) => ({
       tenantId: t.tenantId,
-      displayName: t.displayName || t.tenantId,
+      displayName: nameMap.get(t.tenantId) || t.displayName || t.tenantId,
     }))
   );
 });
@@ -222,18 +234,205 @@ app.get('/api/subscriptions/:subId/openai-resources/:name/deployments', (req, re
   res.json(chatDeploys);
 });
 
-// ==================== Generation route ====================
+// ==================== Generation routes ====================
+
+const REFINEMENT_PROMPT = `You are refining an existing Azure architecture. The previous architecture JSON is provided below. The user wants to make changes to it.
+
+IMPORTANT RULES FOR REFINEMENT:
+- Keep ALL existing resources unless the user explicitly asks to remove them
+- Add new resources as requested
+- Modify properties of existing resources if asked
+- Output a COMPLETE merged JSON (not just the diff)
+- Use the same JSON format as a fresh generation
+- Maintain all existing connections unless changes are needed
+
+Previous architecture:
+`;
+
+/**
+ * POST /api/generate/stream
+ * Generate a Draw.io diagram with SSE streaming progress.
+ */
+app.post('/api/generate/stream', async (req, res) => {
+  try {
+    const { prompt, title, endpoint, deploymentName, previousArchitecture } = req.body;
+
+    if (!prompt) {
+      return res.status(400).json({ error: 'Prompt is required' });
+    }
+    if (!endpoint || !deploymentName) {
+      return res.status(400).json({ error: 'Azure OpenAI endpoint and deploymentName are required.' });
+    }
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+    res.flushHeaders();
+
+    const sendEvent = (type: string, data: any) => {
+      res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    sendEvent('status', { message: 'Acquiring credentials...' });
+
+    const token = getAccessToken('https://cognitiveservices.azure.com');
+    if (!token) {
+      sendEvent('error', { error: 'Could not acquire Cognitive Services token. Run "az login" first.' });
+      res.end();
+      return;
+    }
+
+    // Build messages array
+    const messages: Array<{ role: string; content: string }> = [
+      { role: 'system', content: SYSTEM_PROMPT },
+    ];
+
+    if (previousArchitecture) {
+      // Iterative refinement mode
+      sendEvent('status', { message: 'Refining architecture...' });
+      messages.push({
+        role: 'user',
+        content: REFINEMENT_PROMPT + JSON.stringify(previousArchitecture, null, 2) + '\n\nUser changes: ' + prompt,
+      });
+    } else {
+      sendEvent('status', { message: 'Analysing your architecture...' });
+      messages.push({ role: 'user', content: prompt });
+    }
+
+    const aoaiUrl = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-01`;
+
+    console.log(`  [AI/Stream] Generating with Azure OpenAI: ${deploymentName}`);
+
+    const aiResponse = await fetch(aoaiUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages,
+        max_completion_tokens: 50000,
+        stream: true,
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('  [AI/Stream] Azure OpenAI error:', aiResponse.status, errorText);
+
+      if (aiResponse.status === 401 || aiResponse.status === 403) {
+        sendEvent('error', { error: 'Access denied to Azure OpenAI. Run "az login" and ensure you have the "Cognitive Services OpenAI User" role.' });
+      } else {
+        sendEvent('error', { error: `Azure OpenAI returned ${aiResponse.status}: ${errorText}` });
+      }
+      res.end();
+      return;
+    }
+
+    sendEvent('status', { message: 'AI is generating architecture...' });
+
+    // Read SSE stream from Azure OpenAI
+    let fullContent = '';
+    let tokenCount = 0;
+
+    const reader = aiResponse.body as any;
+    if (!reader || typeof reader[Symbol.asyncIterator] !== 'function') {
+      // Fallback: read entire body as text  
+      const bodyText = await aiResponse.text();
+      // Parse SSE lines
+      for (const line of bodyText.split('\n')) {
+        if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
+          try {
+            const json = JSON.parse(line.slice(6));
+            const delta = json.choices?.[0]?.delta?.content || '';
+            fullContent += delta;
+            tokenCount++;
+          } catch { /* skip invalid lines */ }
+        }
+      }
+    } else {
+      // Node.js readable stream
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for await (const chunk of reader) {
+        buffer += typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line.trim() !== 'data: [DONE]') {
+            try {
+              const json = JSON.parse(line.slice(6));
+              const delta = json.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                fullContent += delta;
+                tokenCount++;
+                if (tokenCount % 40 === 0) {
+                  sendEvent('progress', { tokens: tokenCount });
+                }
+              }
+            } catch { /* skip invalid SSE lines */ }
+          }
+        }
+      }
+    }
+
+    if (!fullContent) {
+      sendEvent('error', { error: 'No response from Azure OpenAI' });
+      res.end();
+      return;
+    }
+
+    sendEvent('status', { message: 'Parsing architecture...' });
+
+    // Extract JSON
+    let jsonStr = fullContent.trim();
+    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (jsonMatch) jsonStr = jsonMatch[1].trim();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonStr);
+    } catch {
+      console.error('  [AI/Stream] Failed to parse:', fullContent.substring(0, 500));
+      sendEvent('error', { error: 'AI returned invalid JSON. Try rephrasing your prompt.' });
+      res.end();
+      return;
+    }
+
+    sendEvent('status', { message: 'Building diagram...' });
+
+    const architecture = parseAIResponse(parsed, title);
+    const builder = new DrawIOBuilder();
+    const xml = builder.generate(architecture);
+
+    console.log(`  [AI/Stream] Generated ${parsed.resources?.length || 0} resources, ${tokenCount} tokens`);
+
+    sendEvent('result', { xml, architecture, parsed });
+    sendEvent('done', {});
+    res.end();
+
+  } catch (error: any) {
+    console.error('  [Error/Stream] Generation failed:', error);
+    try {
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message || 'Internal server error' })}\n\n`);
+    } catch { /* response already ended */ }
+    res.end();
+  }
+});
 
 /**
  * POST /api/generate
- * Generate a Draw.io diagram.
+ * Generate a Draw.io diagram (non-streaming).
  *
  * Body:
- *   { prompt: string, title?: string, endpoint: string, deploymentName: string }
+ *   { prompt: string, title?: string, endpoint: string, deploymentName: string, previousArchitecture?: object }
  */
 app.post('/api/generate', async (req, res) => {
   try {
-    const { prompt, title, endpoint, deploymentName } = req.body;
+    const { prompt, title, endpoint, deploymentName, previousArchitecture } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -252,6 +451,21 @@ app.post('/api/generate', async (req, res) => {
 
       const aoaiUrl = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-01`;
 
+      // Build messages array (with optional refinement)
+      const messages: Array<{ role: string; content: string }> = [
+        { role: 'system', content: SYSTEM_PROMPT },
+      ];
+
+      if (previousArchitecture) {
+        console.log('  [AI] Refinement mode - building on previous architecture');
+        messages.push({
+          role: 'user',
+          content: REFINEMENT_PROMPT + JSON.stringify(previousArchitecture, null, 2) + '\n\nUser changes: ' + prompt,
+        });
+      } else {
+        messages.push({ role: 'user', content: prompt });
+      }
+
       const aiResponse = await fetch(aoaiUrl, {
         method: 'POST',
         headers: {
@@ -261,10 +475,7 @@ app.post('/api/generate', async (req, res) => {
         // gpt-5 models: no temperature (only default=1 supported),
         // use max_completion_tokens instead of max_tokens
         body: JSON.stringify({
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: prompt },
-          ],
+          messages,
           max_completion_tokens: 50000,
         }),
       });

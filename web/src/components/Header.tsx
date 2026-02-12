@@ -57,10 +57,12 @@ export function Header({ auth, theme, onToggleTheme }: HeaderProps) {
             <div className="user-avatar">
               {auth.user?.name?.charAt(0)?.toUpperCase() || '?'}
             </div>
-            <span className="user-name">{auth.user?.name}</span>
-            <span className="user-tenant">
-              {auth.user?.subscriptionName}
-            </span>
+            <div className="user-details">
+              <span className="user-name">{auth.user?.name}</span>
+              <span className="user-tenant">
+                {auth.user?.subscriptionName}
+              </span>
+            </div>
           </div>
         ) : (
           <span className="auth-hint">

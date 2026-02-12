@@ -91,15 +91,27 @@ export interface OnPremises {
   size?: Size;
 }
 
+export interface DiagramPage {
+  name: string;
+  description?: string;
+  regions?: Region[];
+  subscription?: Subscription;
+  resourceGroups?: ResourceGroup[];
+  connections?: Connection[];
+  globalResources?: Resource[];
+  onPremises?: OnPremises[];
+}
+
 export interface Architecture {
   title?: string;
   description?: string;
+  pages?: DiagramPage[];             // Multi-page diagrams
   subscription?: Subscription;
-  subscriptions?: Subscription[];  // Multi-subscription
-  regions?: Region[];  // Alternative: regions at top level
-  onPremises?: OnPremises[];  // On-premises locations
+  subscriptions?: Subscription[];    // Multi-subscription
+  regions?: Region[];                // Alternative: regions at top level
+  onPremises?: OnPremises[];         // On-premises locations
   connections?: Connection[];
-  globalResources?: Resource[];  // Resources outside regions (Traffic Manager, Front Door)
+  globalResources?: Resource[];      // Resources outside regions (Traffic Manager, Front Door)
 }
 
 export interface Connection {
@@ -149,54 +161,3 @@ export interface ParsedConnection {
   type?: 'network' | 'data' | 'api' | 'expressroute' | 'vpn' | 'peering';
   label?: string;
 }
-
-// ==================== TEMPLATE TYPES ====================
-
-export interface ArchitectureTemplate {
-  id: string;
-  name: string;
-  description: string;
-  tags: string[];
-  architecture: Architecture;
-}
-
-// ==================== COMMON PATTERNS ====================
-
-export type HubSpokeConfig = {
-  hub: {
-    name: string;
-    region: string;
-    hasFirewall?: boolean;
-    hasVpnGateway?: boolean;
-    hasExpressRoute?: boolean;
-    hasBastion?: boolean;
-  };
-  spokes: Array<{
-    name: string;
-    purpose: string;  // e.g., "production", "dev", "shared-services"
-    resources?: Resource[];
-  }>;
-};
-
-export type HAConfig = {
-  primaryRegion: string;
-  secondaryRegion: string;
-  replicationType?: 'active-active' | 'active-passive';
-  trafficDistribution?: 'traffic-manager' | 'front-door' | 'load-balancer';
-};
-
-export type ThreeTierConfig = {
-  webTier: {
-    vmCount?: number;
-    useAppGateway?: boolean;
-    useVmss?: boolean;
-  };
-  appTier: {
-    vmCount?: number;
-    useAks?: boolean;
-  };
-  dataTier: {
-    database: 'sql' | 'cosmos' | 'mysql' | 'postgresql';
-    usePrivateEndpoint?: boolean;
-  };
-};

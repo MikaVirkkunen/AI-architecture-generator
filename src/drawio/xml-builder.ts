@@ -7,7 +7,7 @@
 import { create } from 'xmlbuilder2';
 import { generateCellId, resetCounter } from '../utils/id-generator.js';
 import { RESOURCES, CONTAINER_STYLES, type ResourceDefinition } from '../schema/resources.js';
-import type { Architecture, Resource, Subscription, ResourceGroup, Region, VNet, Subnet, Connection, Position, OnPremises } from '../schema/types.js';
+import type { Architecture, Resource, Subscription, ResourceGroup, Region, VNet, Subnet, Connection, Position, OnPremises, DiagramPage } from '../schema/types.js';
 
 interface CellInfo {
   id: string;
@@ -18,18 +18,18 @@ interface CellInfo {
 export class DrawIOBuilder {
   private cellMap: Map<string, CellInfo> = new Map();
   private idCounter = 0;
+  private usedResourceTypes: Set<string> = new Set();
+  private usedConnectionStyles: Set<string> = new Set();
 
   constructor() {
     resetCounter();
   }
 
   /**
-   * Generate a complete .drawio XML file from an architecture definition
+   * Generate a complete .drawio XML file from an architecture definition.
+   * Supports multi-page diagrams via arch.pages.
    */
   public generate(arch: Architecture): string {
-    this.cellMap.clear();
-    this.idCounter = 0;
-
     const doc = create({ version: '1.0', encoding: 'UTF-8' })
       .ele('mxfile', {
         host: 'app.diagrams.net',
@@ -39,9 +39,46 @@ export class DrawIOBuilder {
         type: 'device',
       });
 
+    if (arch.pages && arch.pages.length > 0) {
+      // Multi-page mode
+      for (const page of arch.pages) {
+        const pageArch: Architecture = {
+          title: page.name,
+          description: page.description,
+          regions: page.regions,
+          subscription: page.subscription,
+          connections: page.connections,
+          globalResources: page.globalResources,
+          onPremises: page.onPremises,
+        };
+        if (page.resourceGroups) {
+          pageArch.subscription = {
+            name: 'Azure Subscription',
+            resourceGroups: page.resourceGroups,
+          };
+        }
+        this.generatePage(doc, page.name, pageArch);
+      }
+    } else {
+      // Single-page mode (existing behaviour)
+      this.generatePage(doc, arch.title || 'Azure Architecture', arch);
+    }
+
+    return doc.end({ prettyPrint: true });
+  }
+
+  /**
+   * Render one page (diagram tab) into the parent mxfile element.
+   */
+  private generatePage(doc: any, pageName: string, arch: Architecture): void {
+    this.cellMap.clear();
+    this.idCounter = 0;
+    this.usedResourceTypes.clear();
+    this.usedConnectionStyles.clear();
+
     const diagram = doc.ele('diagram', {
       id: generateCellId('diagram'),
-      name: arch.title || 'Azure Architecture',
+      name: pageName,
     });
 
     // Calculate page size based on content
@@ -72,8 +109,30 @@ export class DrawIOBuilder {
     root.ele('mxCell', { id: '0' });
     root.ele('mxCell', { id: '1', parent: '0' });
 
+    // Title block
+    let titleOffset = 0;
+    if (arch.title) {
+      const titleId = this.nextId();
+      // Estimate height needed for description text
+      const descLen = arch.description?.length || 0;
+      const descLines = descLen > 0 ? Math.ceil(descLen / 100) : 0; // ~100 chars per line at width 800
+      const titleHeight = descLines > 0 ? Math.max(60, 30 + descLines * 18) : 30;
+      const titleText = `<b style="font-size:16px">${arch.title}</b>${arch.description ? '<br><span style="font-size:12px;color:#666666">' + arch.description + '</span>' : ''}`;
+      root.ele('mxCell', {
+        id: titleId,
+        value: titleText,
+        style: 'text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;fontSize=14;fontColor=#333333;',
+        vertex: '1',
+        parent: '1',
+      }).ele('mxGeometry', {
+        x: '50', y: '10', width: '800', height: String(titleHeight),
+        as: 'geometry',
+      });
+      titleOffset = titleHeight + 10;
+    }
+
     let currentX = 50;
-    let currentY = 50;
+    let currentY = 50 + titleOffset;
     let maxCloudHeight = 0;
     let totalCloudWidth = 0;
 
@@ -127,7 +186,12 @@ export class DrawIOBuilder {
       this.buildConnections(root, arch.connections);
     }
 
-    return doc.end({ prettyPrint: true });
+    // Add legend
+    if (this.usedResourceTypes.size > 0) {
+      const legendX = Math.max(totalCloudWidth, this.estimatePageWidth(arch)) - 230;
+      const legendY = 50 + titleOffset;
+      this.buildLegend(root, legendX, legendY);
+    }
   }
 
   private nextId(): string {
@@ -489,11 +553,19 @@ export class DrawIOBuilder {
       return;
     }
 
+    this.usedResourceTypes.add(resource.type);
+
     const id = resource.id || this.nextId();
+
+    // Build property label (small text below name)
+    const displayProps = this.getDisplayProperties(resource);
+    const propLabel = displayProps.length > 0
+      ? '<br><font style="font-size:9px;color:#666666">' + displayProps.join(' | ') + '</font>'
+      : '';
 
     // Resource with object wrapper for properties
     const obj = parent.ele('object', {
-      label: resource.name,
+      label: resource.name + propLabel,
       id,
     });
 
@@ -524,6 +596,32 @@ export class DrawIOBuilder {
     this.cellMap.set(resource.name, { id, parentId, position: pos });
   }
 
+  /** Pick which resource properties to display as labels */
+  private getDisplayProperties(resource: Resource): string[] {
+    if (!resource.properties) return [];
+    const labels: string[] = [];
+    const displayKeys: Record<string, string> = {
+      sku: 'SKU',
+      tier: 'Tier',
+      size: 'Size',
+      vmSize: 'Size',
+      addressSpace: 'CIDR',
+      addressPrefix: 'CIDR',
+      bandwidth: 'BW',
+      capacity: 'Cap',
+      replicaCount: 'Replicas',
+      nodeCount: 'Nodes',
+      version: 'v',
+      kind: 'Kind',
+    };
+    for (const [key, label] of Object.entries(displayKeys)) {
+      if (resource.properties[key] !== undefined && resource.properties[key] !== null) {
+        labels.push(`${label}: ${resource.properties[key]}`);
+      }
+    }
+    return labels.slice(0, 3); // Max 3 properties shown
+  }
+
   private buildResourceList(parent: any, resources: Resource[], parentId: string, pos: Position): void {
     let x = pos.x;
     let y = pos.y;
@@ -550,6 +648,10 @@ export class DrawIOBuilder {
       if (!from || !to) {
         console.warn(`Cannot create connection: ${conn.from} -> ${conn.to} (resource not found)`);
         continue;
+      }
+
+      if (conn.style) {
+        this.usedConnectionStyles.add(conn.style);
       }
 
       let style = 'edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;fontSize=10;labelBackgroundColor=#FFFFFF;';
@@ -581,6 +683,116 @@ export class DrawIOBuilder {
         relative: '1',
         as: 'geometry',
       });
+    }
+  }
+
+  // ==================== LEGEND ====================
+
+  private buildLegend(parent: any, x: number, y: number): void {
+    const legendItems = Array.from(this.usedResourceTypes)
+      .map(type => ({ type, def: RESOURCES[type] }))
+      .filter(item => item.def)
+      .sort((a, b) => a.def.displayName.localeCompare(b.def.displayName));
+
+    if (legendItems.length === 0) return;
+
+    const itemHeight = 28;
+    const legendWidth = 210;
+    const headerHeight = 30;
+    let totalHeight = headerHeight + legendItems.length * itemHeight + 10;
+
+    // Add connection style entries
+    const connStyles: Array<{ label: string; color: string; dashed: boolean }> = [];
+    if (this.usedConnectionStyles.has('expressroute')) connStyles.push({ label: 'ExpressRoute', color: '#FF6600', dashed: false });
+    if (this.usedConnectionStyles.has('vpn')) connStyles.push({ label: 'VPN', color: '#0066CC', dashed: true });
+    if (this.usedConnectionStyles.has('peering')) connStyles.push({ label: 'VNet Peering', color: '#009900', dashed: false });
+    if (this.usedConnectionStyles.has('dashed')) connStyles.push({ label: 'Dashed', color: '#666666', dashed: true });
+    if (connStyles.length > 0) totalHeight += 20 + connStyles.length * itemHeight;
+
+    const legendId = this.nextId();
+
+    this.addContainer(parent, {
+      id: legendId,
+      parentId: '1',
+      value: 'Legend',
+      style: 'rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#999999;dashed=1;verticalAlign=top;fontStyle=1;fontSize=12;container=1;collapsible=0;',
+      x, y,
+      width: legendWidth,
+      height: totalHeight,
+    });
+
+    let entryY = headerHeight;
+    for (const item of legendItems) {
+      // Small icon
+      parent.ele('mxCell', {
+        id: this.nextId(),
+        value: '',
+        style: `aspect=fixed;html=1;points=[];align=center;image;fontSize=10;image=${item.def.icon};`,
+        vertex: '1',
+        parent: legendId,
+      }).ele('mxGeometry', {
+        x: '8', y: String(entryY), width: '20', height: '20',
+        as: 'geometry',
+      });
+
+      // Label
+      parent.ele('mxCell', {
+        id: this.nextId(),
+        value: item.def.displayName,
+        style: 'text;html=1;align=left;verticalAlign=middle;whiteSpace=nowrap;overflow=hidden;fontSize=10;fontColor=#333333;',
+        vertex: '1',
+        parent: legendId,
+      }).ele('mxGeometry', {
+        x: '34', y: String(entryY), width: '170', height: '20',
+        as: 'geometry',
+      });
+
+      entryY += itemHeight;
+    }
+
+    // Connection styles section
+    if (connStyles.length > 0) {
+      entryY += 5;
+      parent.ele('mxCell', {
+        id: this.nextId(),
+        value: '<b>Connections</b>',
+        style: 'text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#333333;',
+        vertex: '1',
+        parent: legendId,
+      }).ele('mxGeometry', {
+        x: '8', y: String(entryY), width: '190', height: '15',
+        as: 'geometry',
+      });
+      entryY += 18;
+
+      for (const cs of connStyles) {
+        parent.ele('mxCell', {
+          id: this.nextId(),
+          value: '',
+          style: `endArrow=classic;html=1;strokeColor=${cs.color};strokeWidth=2;${cs.dashed ? 'dashed=1;' : ''}`,
+          edge: '1',
+          parent: legendId,
+        }).ele('mxGeometry', {
+          width: '40', height: '0', relative: '1',
+          as: 'geometry',
+        }).up()
+          .ele('Array', { as: 'points' }).up()
+          .ele('mxPoint', { x: '8', y: String(entryY + 10), as: 'sourcePoint' }).up()
+          .ele('mxPoint', { x: '30', y: String(entryY + 10), as: 'targetPoint' });
+
+        parent.ele('mxCell', {
+          id: this.nextId(),
+          value: cs.label,
+          style: 'text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#333333;',
+          vertex: '1',
+          parent: legendId,
+        }).ele('mxGeometry', {
+          x: '34', y: String(entryY), width: '170', height: '20',
+          as: 'geometry',
+        });
+
+        entryY += itemHeight;
+      }
     }
   }
 

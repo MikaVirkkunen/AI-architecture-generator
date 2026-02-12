@@ -2,10 +2,11 @@
  * Test script - generates sample diagrams
  */
 
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { generate, generateFromArchitecture, listAllResources } from './index.js';
+import { generate, listAllResources } from './index.js';
+import { DrawIOBuilder } from './drawio/xml-builder.js';
 import type { Architecture } from './schema/types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,62 +14,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 async function test() {
   console.log('🧪 Testing AI Azure Architecture Generator\n');
 
-  // Test 1: Simple prompt
-  console.log('Test 1: Simple prompt');
-  const result1 = await generate({
-    prompt: '3 VMs with VNET and storage account and CosmosDB backend',
-    title: 'Simple Test - VMs with Backend',
-    provider: 'simple',
-  });
-  
-  const output1 = resolve(__dirname, '../output/test-simple.drawio');
-  writeFileSync(output1, result1.xml);
-  console.log(`   ✅ Generated: ${output1}`);
-  console.log(`   Resources: ${result1.parsed.resources.map(r => r.type).join(', ')}`);
-
-  // Test 2: Hub-spoke architecture
-  console.log('\nTest 2: Hub-spoke architecture');
-  const result2 = await generate({
-    prompt: 'Hub and spoke network with firewall, bastion, VPN gateway, and 2 VMs in spoke',
-    title: 'Hub-Spoke Architecture',
-    provider: 'simple',
-  });
-  
-  const output2 = resolve(__dirname, '../output/test-hub-spoke.drawio');
-  writeFileSync(output2, result2.xml);
-  console.log(`   ✅ Generated: ${output2}`);
-  console.log(`   Resources: ${result2.parsed.resources.slice(0, 8).map(r => r.type).join(', ')}...`);
-
-  // Test 3: Multi-region HA with ExpressRoute
-  console.log('\nTest 3: Multi-region HA with ExpressRoute');
-  const result3 = await generate({
-    prompt: 'HA dual region (West Europe, North Europe) hub-spoke with ExpressRoute, firewall, and VPN',
-    title: 'Multi-Region HA Architecture',
-    provider: 'simple',
-  });
-  
-  const output3 = resolve(__dirname, '../output/test-multi-region.drawio');
-  writeFileSync(output3, result3.xml);
-  console.log(`   ✅ Generated: ${output3}`);
-  console.log(`   Regions: ${result3.parsed.regions?.join(', ')}`);
-  console.log(`   Has on-premises: ${result3.parsed.hasOnPremises}`);
-
-  // Test 4: Load JSON template
-  console.log('\nTest 4: Load JSON template');
-  try {
-    const templatePath = resolve(__dirname, '../templates/ha-expressroute-hub-spoke.json');
-    const template = JSON.parse(readFileSync(templatePath, 'utf-8')) as Architecture;
-    const xml4 = generateFromArchitecture(template);
-    const output4 = resolve(__dirname, '../output/test-template.drawio');
-    writeFileSync(output4, xml4);
-    console.log(`   ✅ Generated: ${output4}`);
-    console.log(`   Template: HA ExpressRoute Hub-Spoke`);
-  } catch (e) {
-    console.log(`   ⚠️ Skipped: Template file not found or invalid`);
-  }
-
-  // Test 5: Direct architecture object (programmatic)
-  console.log('\nTest 5: Direct architecture object (programmatic)');
+  // Test: Direct architecture object (programmatic)
+  console.log('Test 1: Direct architecture object (programmatic)');
   const arch: Architecture = {
     title: 'Three-Tier Web Application',
     subscription: {
@@ -124,14 +71,15 @@ async function test() {
     ],
   };
 
-  const xml5 = generateFromArchitecture(arch);
-  const output5 = resolve(__dirname, '../output/test-three-tier.drawio');
-  writeFileSync(output5, xml5);
-  console.log(`   ✅ Generated: ${output5}`);
+  const builder = new DrawIOBuilder();
+  const xml = builder.generate(arch);
+  const output = resolve(__dirname, '../output/test-three-tier.drawio');
+  writeFileSync(output, xml);
+  console.log(`   ✅ Generated: ${output}`);
 
   // Summary
   console.log('\n' + '='.repeat(60));
-  console.log('✨ All tests completed!');
+  console.log('✨ Test completed!');
   console.log('='.repeat(60));
   console.log(`\n📦 Supported resource types: ${listAllResources().length}`);
   console.log('\nOpen the .drawio files with:');

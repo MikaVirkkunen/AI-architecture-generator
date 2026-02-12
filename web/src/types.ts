@@ -48,9 +48,19 @@ export interface GenerateRequest {
 
 export interface GenerateResponse {
   xml: string;
-  architecture: any;
+  architecture: {
+    title?: string;
+    description?: string;
+    pages?: Array<{
+      name: string;
+      description?: string;
+    }>;
+    [key: string]: any;
+  };
   parsed: {
-    resources: Array<{
+    title?: string;
+    description?: string;
+    resources?: Array<{
       type: string;
       name: string;
       count?: number;
@@ -58,6 +68,15 @@ export interface GenerateResponse {
     connections?: Array<{
       from: string;
       to: string;
+    }>;
+    pages?: Array<{
+      name: string;
+      description?: string;
+      resources?: Array<{
+        type: string;
+        name: string;
+        count?: number;
+      }>;
     }>;
   };
 }

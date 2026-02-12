@@ -48,7 +48,7 @@ export class ClaudeProvider implements AIProvider {
       throw new Error(`Claude API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as any;
     const content = data.content?.[0]?.text;
 
     if (!content) {

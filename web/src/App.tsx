@@ -3,7 +3,9 @@ import { Header } from './components/Header';
 import { ConfigPanel } from './components/ConfigPanel';
 import { GeneratePanel } from './components/GeneratePanel';
 import { DiagramViewer } from './components/DiagramViewer';
+import { HistoryPanel } from './components/HistoryPanel';
 import { getAuthStatus } from './services/azureDiscovery';
+import { saveToHistory } from './services/historyService';
 import type { AuthStatus, GenerateResponse } from './types';
 
 function WelcomeBanner({ auth }: { auth: AuthStatus | null }) {
@@ -60,13 +62,17 @@ export default function App() {
   }, []);
 
   // Check server-side auth status on mount
-  useEffect(() => {
+  const refreshAuth = useCallback(() => {
     getAuthStatus()
       .then(setAuth)
       .catch(() =>
         setAuth({ authenticated: false, message: 'Cannot reach API server.' })
       );
   }, []);
+
+  useEffect(() => {
+    refreshAuth();
+  }, [refreshAuth]);
 
   const handleConfigChange = useCallback(
     (cfg: typeof config) => {
@@ -82,13 +88,24 @@ export default function App() {
       <main className="main">
         <div className="sidebar">
           <WelcomeBanner auth={auth} />
-          <ConfigPanel auth={auth} onConfigChange={handleConfigChange} />
+          <ConfigPanel auth={auth} onConfigChange={handleConfigChange} onAuthRefresh={refreshAuth} />
           <GeneratePanel
             auth={auth}
             config={config}
-            onGenerated={setResult}
+            previousResult={result}
+            onGenerated={(res, prompt, title) => {
+              setResult(res);
+              saveToHistory({
+                prompt,
+                title: title || res.architecture?.title || 'Untitled',
+                xml: res.xml,
+                parsed: res.parsed,
+                modelInfo: config?.modelInfo || '',
+              });
+            }}
             onError={setError}
           />
+          <HistoryPanel onLoad={setResult} />
           {error && (
             <div className="alert alert-error sidebar-alert">
               <strong>Error:</strong> {error}
