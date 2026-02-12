@@ -22,11 +22,11 @@ function WelcomeBanner({ auth }: { auth: AuthStatus | null }) {
           <p>
             Generate Draw.io Azure architecture diagrams using natural language.
             Run <code>az login</code> to connect to your Azure account and use
-            your own OpenAI models, or use <strong>Simple Mode</strong> right away.
+            your own OpenAI models to generate architecture diagrams.
           </p>
           <div className="welcome-actions">
             <code className="auth-command-inline">az login</code>
-            <span className="welcome-or">then refresh — or use Simple Mode below</span>
+            <span className="welcome-or">then refresh this page</span>
           </div>
         </div>
       </div>

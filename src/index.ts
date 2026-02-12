@@ -5,7 +5,7 @@
  */
 
 import { DrawIOBuilder } from './drawio/xml-builder.js';
-import { parseAIResponse, parseSimple, type AIProvider, type ParsedResponse } from './ai/parser.js';
+import { parseAIResponse, type AIProvider, type ParsedResponse } from './ai/parser.js';
 import { ClaudeProvider } from './ai/providers/claude.js';
 import { OpenAIProvider } from './ai/providers/openai.js';
 import { AzureOpenAIProvider } from './ai/providers/azure-openai.js';
@@ -14,7 +14,7 @@ import type { Architecture, Region, Subscription } from './schema/types.js';
 export interface GenerateOptions {
   prompt: string;
   title?: string;
-  provider?: 'claude' | 'openai' | 'azure-openai' | 'simple';
+  provider?: 'claude' | 'openai' | 'azure-openai';
   providerConfig?: {
     apiKey?: string;
     endpoint?: string;
@@ -35,14 +35,12 @@ export interface GenerateResult {
 export async function generate(options: GenerateOptions): Promise<GenerateResult> {
   let parsed: ParsedResponse;
 
-  if (options.provider === 'simple' || !options.provider) {
-    // Use simple local parser (no AI)
-    parsed = parseSimple(options.prompt);
-  } else {
-    // Use AI provider
-    const provider = createProvider(options.provider, options.providerConfig);
-    parsed = await provider.parse(options.prompt);
+  if (!options.provider) {
+    throw new Error('AI provider is required. Use claude, openai, or azure-openai.');
   }
+  // Use AI provider
+  const provider = createProvider(options.provider, options.providerConfig);
+  parsed = await provider.parse(options.prompt);
 
   const architecture = parseAIResponse(parsed, options.title);
   const builder = new DrawIOBuilder();
@@ -136,7 +134,7 @@ function createProvider(
 
 // Re-export types and utilities
 export { DrawIOBuilder } from './drawio/xml-builder.js';
-export { parseSimple, parseAIResponse, SYSTEM_PROMPT } from './ai/parser.js';
+export { parseAIResponse, SYSTEM_PROMPT } from './ai/parser.js';
 export { ClaudeProvider } from './ai/providers/claude.js';
 export { OpenAIProvider } from './ai/providers/openai.js';
 export { AzureOpenAIProvider } from './ai/providers/azure-openai.js';

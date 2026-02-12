@@ -16,6 +16,8 @@ No Visio. No manual dragging. Just tell the AI what you need, and it builds a pi
 
 **↓ Generates this ↓**
 
+![Azure Architecture Generator Screenshot](docs/screenshot.png)
+
 A fully structured Draw.io diagram with:
 - Nested subscriptions, regions, resource groups, VNets, and subnets
 - Official Azure icon stencils for every resource

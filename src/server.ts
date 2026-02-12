@@ -228,10 +228,7 @@ app.get('/api/subscriptions/:subId/openai-resources/:name/deployments', (req, re
  * POST /api/generate
  * Generate a Draw.io diagram.
  *
- * Body (Simple mode):
- *   { prompt: string, title?: string }
- *
- * Body (AI mode):
+ * Body:
  *   { prompt: string, title?: string, endpoint: string, deploymentName: string }
  */
 app.post('/api/generate', async (req, res) => {
@@ -343,17 +340,10 @@ app.post('/api/generate', async (req, res) => {
       return res.json({ xml, architecture, parsed });
     }
 
-    // Simple mode: use local pattern-matching parser
-    console.log('  [Simple] Generating with local parser');
-
-    const result = await generate({
-      prompt,
-      title,
-      provider: 'simple',
+    // No endpoint/deployment provided
+    return res.status(400).json({
+      error: 'Azure OpenAI endpoint and deploymentName are required. Select a model in the UI.',
     });
-
-    console.log(`  [Simple] Generated ${result.parsed.resources.length} resources`);
-    return res.json(result);
   } catch (error: any) {
     console.error('  [Error] Generation failed:', error);
     return res.status(500).json({ error: error.message || 'Internal server error' });

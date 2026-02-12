@@ -151,11 +151,11 @@ export function ConfigPanel({ auth, onConfigChange }: ConfigPanelProps) {
             </svg>
           </div>
           <p className="auth-required-text">
-            To use AI mode, authenticate with Azure CLI:
+            Authenticate with Azure CLI to get started:
           </p>
           <code className="auth-required-command">az login</code>
           <p className="auth-required-hint">
-            Then refresh this page. Simple mode works without authentication.
+            Then refresh this page to select your Azure OpenAI model.
           </p>
         </div>
       </div>

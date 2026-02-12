@@ -29,10 +29,9 @@ export function GeneratePanel({
   const [prompt, setPrompt] = useState('');
   const [title, setTitle] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [mode, setMode] = useState<'ai' | 'simple'>('simple');
 
   const canGenerate =
-    prompt.trim().length > 0 && (mode === 'simple' || config);
+    prompt.trim().length > 0 && config;
 
   const handleGenerate = async () => {
     if (!canGenerate) return;
@@ -41,15 +40,12 @@ export function GeneratePanel({
     onError('');
 
     try {
-      let body: any = { prompt, title: title || undefined };
-
-      if (mode === 'ai' && config) {
-        body = {
-          ...body,
-          endpoint: config.endpoint,
-          deploymentName: config.deploymentName,
-        };
-      }
+      let body: any = {
+        prompt,
+        title: title || undefined,
+        endpoint: config!.endpoint,
+        deploymentName: config!.deploymentName,
+      };
 
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -93,25 +89,6 @@ export function GeneratePanel({
           />
         </svg>
         <h2>Generate Architecture</h2>
-      </div>
-
-      <div className="mode-toggle">
-        <button
-          className={`mode-btn ${mode === 'simple' ? 'active' : ''}`}
-          onClick={() => setMode('simple')}
-        >
-          Simple Mode
-        </button>
-        <button
-          className={`mode-btn ${mode === 'ai' ? 'active' : ''}`}
-          onClick={() => setMode('ai')}
-          disabled={!auth?.authenticated || !config}
-          title={
-            !config ? 'Select an Azure OpenAI model first' : ''
-          }
-        >
-          AI Mode {config ? `(${config.modelInfo})` : ''}
-        </button>
       </div>
 
       <div className="form-group">

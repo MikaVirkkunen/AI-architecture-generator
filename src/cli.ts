@@ -19,7 +19,7 @@ Usage:
 
 Options:
   -o, --output <file>    Output file path (default: architecture.drawio)
-  -p, --provider <name>  AI provider: simple, claude, openai, azure-openai (default: simple)
+  -p, --provider <name>  AI provider: claude, openai, azure-openai (default: azure-openai)
   -t, --title <title>    Diagram title
   --api-key <key>        API key (or use env var)
   --endpoint <url>       Azure OpenAI endpoint
@@ -34,9 +34,6 @@ Environment Variables:
   AZURE_OPENAI_DEPLOYMENT Azure OpenAI deployment name
 
 Examples:
-  # Simple mode (no AI, basic pattern matching)
-  az-arch-gen "3 VMs with VNET and storage account and CosmosDB"
-
   # With Claude
   az-arch-gen "Web tier with 3 VMs behind a load balancer, connected to CosmosDB" -p claude
 
@@ -49,7 +46,7 @@ Examples:
   // Parse arguments
   let prompt = '';
   let output = 'architecture.drawio';
-  let provider: 'simple' | 'claude' | 'openai' | 'azure-openai' = 'simple';
+  let provider: 'claude' | 'openai' | 'azure-openai' = 'azure-openai';
   let title: string | undefined;
   let apiKey: string | undefined;
   let endpoint: string | undefined;
