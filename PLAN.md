@@ -6,10 +6,10 @@ Transform natural language descriptions like:
 
 Into proper Draw.io Azure architecture diagrams with correct containment relationships (VMs inside subnets inside VNETs inside subscriptions).
 
-## How ARI Does It (Reverse Engineering Summary)
+## Draw.io XML Format
 
 ### Core Mechanics
-1. **XML Generation**: ARI creates Draw.io `.drawio` files which are XML-based
+1. **XML Generation**: Draw.io `.drawio` files are XML-based
 2. **mxCell Elements**: Each resource is an `<mxCell>` with:
    - `id`: Unique identifier
    - `style`: References Azure icon stencils (e.g., `img/lib/azure2/compute/Virtual_Machine.svg`)
@@ -20,14 +20,7 @@ Into proper Draw.io Azure architecture diagrams with correct containment relatio
 3. **Containers (Swimlanes)**: VNETs, Subscriptions use `swimlane` style for nested containment
 4. **Connections**: Lines between resources use `edge` attribute with `source` and `target` IDs
 
-### Key Files in ARI
-- `Build-ARIDiagramSubnet.ps1` (93KB) - Subnet component building, icon definitions
-- `Start-ARIDiagramNetwork.ps1` (85KB) - Network topology with containers
-- `Start-ARIDiagramSubscription.ps1` (126KB) - Subscription-level diagrams
-- `Start-ARIDiagramOrganization.ps1` (53KB) - Hierarchy diagrams
-- `Set-ARIDiagramFile.ps1` - Merges XML files
-
-### Azure Icon Stencils (from ARI)
+### Azure Icon Stencils
 ```javascript
 // These reference Draw.io's built-in Azure icon library
 IconVMs = "image=img/lib/azure2/compute/Virtual_Machine.svg"

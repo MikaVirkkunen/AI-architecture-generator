@@ -294,7 +294,7 @@ npm run cli -- --prompt "Hub-spoke with ExpressRoute" --output my-diagram.drawio
 
 MIT — see [LICENSE](LICENSE)
 
-This project is inspired by the diagram generation in [Azure Resource Inventory (ARI)](https://github.com/microsoft/ARI) by Microsoft, which creates Draw.io diagrams from live Azure subscriptions. This project takes the inverse approach: generating diagrams from natural language descriptions without needing existing Azure resources.
+This project generates Azure architecture diagrams from natural language descriptions, without needing existing Azure resources.
 
 ---
 

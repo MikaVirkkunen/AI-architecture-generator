@@ -1,6 +1,6 @@
 /**
  * ID Generator for Draw.io elements
- * Generates unique IDs similar to how ARI does it
+ * Generates unique IDs for mxCell elements
  */
 
 const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
