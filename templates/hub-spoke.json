@@ -1,0 +1,73 @@
+{
+  "title": "Hub-Spoke Network Architecture",
+  "description": "Enterprise hub-spoke network topology with centralized security",
+  "subscription": {
+    "name": "Network Subscription",
+    "resourceGroups": [
+      {
+        "name": "rg-hub-network",
+        "resources": [
+          {
+            "type": "vnet",
+            "name": "vnet-hub",
+            "properties": { "addressSpace": "10.0.0.0/16" },
+            "subnets": [
+              {
+                "type": "subnet",
+                "name": "AzureFirewallSubnet",
+                "properties": { "addressPrefix": "10.0.1.0/24" },
+                "resources": [
+                  { "type": "firewall", "name": "fw-hub" }
+                ]
+              },
+              {
+                "type": "subnet",
+                "name": "GatewaySubnet",
+                "properties": { "addressPrefix": "10.0.2.0/24" },
+                "resources": [
+                  { "type": "vpnGateway", "name": "vpn-hub" }
+                ]
+              },
+              {
+                "type": "subnet",
+                "name": "AzureBastionSubnet",
+                "properties": { "addressPrefix": "10.0.3.0/24" },
+                "resources": [
+                  { "type": "bastion", "name": "bastion-hub" }
+                ]
+              }
+            ]
+          },
+          { "type": "publicIp", "name": "pip-firewall" },
+          { "type": "publicIp", "name": "pip-vpn" }
+        ]
+      },
+      {
+        "name": "rg-spoke-workload",
+        "resources": [
+          {
+            "type": "vnet",
+            "name": "vnet-spoke-workload",
+            "properties": { "addressSpace": "10.1.0.0/16" },
+            "subnets": [
+              {
+                "type": "subnet",
+                "name": "subnet-workload",
+                "properties": { "addressPrefix": "10.1.1.0/24" },
+                "resources": [
+                  { "type": "vm", "name": "vm-workload-01" },
+                  { "type": "vm", "name": "vm-workload-02" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "connections": [
+    { "from": "vnet-hub", "to": "vnet-spoke-workload", "label": "Peering" },
+    { "from": "pip-firewall", "to": "fw-hub" },
+    { "from": "pip-vpn", "to": "vpn-hub" }
+  ]
+}

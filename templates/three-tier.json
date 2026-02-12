@@ -1,0 +1,67 @@
+{
+  "title": "Three-Tier Web Application",
+  "description": "Classic three-tier architecture with web, application, and database tiers",
+  "subscription": {
+    "name": "Production Subscription",
+    "resourceGroups": [
+      {
+        "name": "rg-webapp-prod",
+        "resources": [
+          {
+            "type": "vnet",
+            "name": "vnet-prod",
+            "properties": {
+              "addressSpace": "10.0.0.0/16"
+            },
+            "subnets": [
+              {
+                "type": "subnet",
+                "name": "subnet-web",
+                "properties": { "addressPrefix": "10.0.1.0/24" },
+                "resources": [
+                  { "type": "appGateway", "name": "agw-web" },
+                  { "type": "vm", "name": "vm-web-01" },
+                  { "type": "vm", "name": "vm-web-02" }
+                ]
+              },
+              {
+                "type": "subnet",
+                "name": "subnet-app",
+                "properties": { "addressPrefix": "10.0.2.0/24" },
+                "resources": [
+                  { "type": "loadBalancer", "name": "lb-app" },
+                  { "type": "vm", "name": "vm-app-01" },
+                  { "type": "vm", "name": "vm-app-02" },
+                  { "type": "vm", "name": "vm-app-03" }
+                ]
+              },
+              {
+                "type": "subnet",
+                "name": "subnet-data",
+                "properties": { "addressPrefix": "10.0.3.0/24" },
+                "resources": [
+                  { "type": "privateEndpoint", "name": "pe-sql" },
+                  { "type": "privateEndpoint", "name": "pe-storage" }
+                ]
+              }
+            ]
+          },
+          { "type": "sqlServer", "name": "sql-prod-server" },
+          { "type": "storageAccount", "name": "stproddata001" },
+          { "type": "keyVault", "name": "kv-prod-secrets" },
+          { "type": "redis", "name": "redis-cache" }
+        ]
+      }
+    ]
+  },
+  "connections": [
+    { "from": "agw-web", "to": "vm-web-01" },
+    { "from": "agw-web", "to": "vm-web-02" },
+    { "from": "lb-app", "to": "vm-app-01" },
+    { "from": "lb-app", "to": "vm-app-02" },
+    { "from": "lb-app", "to": "vm-app-03" },
+    { "from": "vm-app-01", "to": "pe-sql" },
+    { "from": "pe-sql", "to": "sql-prod-server" },
+    { "from": "pe-storage", "to": "stproddata001" }
+  ]
+}
