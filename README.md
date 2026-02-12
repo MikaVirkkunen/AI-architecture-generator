@@ -9,9 +9,7 @@ No Visio. No manual dragging. Just tell the AI what you need, and it builds a pi
 ## What It Does
 
 ```
-"Create a hub-spoke architecture with ExpressRoute in West Europe and North Europe,
- with 3 web VMs across availability zones, Azure Firewall, Bastion, and
- Microsoft Fabric in a separate data platform subscription"
+"Create a hub-spoke architecture with ExpressRoute in West Europe and Sweden Central Azure regions, 2 VMs in each, Azure Firewall and Bastion"
 ```
 
 **↓ Generates this ↓**
