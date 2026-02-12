@@ -77,6 +77,80 @@ async function test() {
   writeFileSync(output, xml);
   console.log(`   ✅ Generated: ${output}`);
 
+  // Test 2: Hub-spoke with multiple VNets (tests edge routing around containers)
+  console.log('\nTest 2: Hub-spoke with peering connections');
+  const hubSpoke: Architecture = {
+    title: 'Hub-Spoke with APIM',
+    description: 'Tests that peering lines route around intermediate containers.',
+    regions: [{
+      name: 'West Europe (Primary)',
+      isPrimary: true,
+      resourceGroups: [
+        {
+          name: 'rg-hub-weu',
+          resources: [
+            {
+              type: 'hubVnet', name: 'vnet-hub-weu',
+              properties: { addressSpace: '10.0.0.0/16' },
+              subnets: [
+                { type: 'subnet', name: 'GatewaySubnet-weu', properties: { addressPrefix: '10.0.0.0/24' }, resources: [
+                  { type: 'vpnGateway', name: 'vpngw-hub-weu', properties: { sku: 'VpnGw2' } },
+                ] },
+                { type: 'subnet', name: 'AzureFirewallSubnet-weu', properties: { addressPrefix: '10.0.1.0/24' }, resources: [
+                  { type: 'firewall', name: 'fw-hub-weu', properties: { sku: 'AZFW_VNet' } },
+                ] },
+                { type: 'subnet', name: 'AzureBastionSubnet-weu', properties: { addressPrefix: '10.0.2.0/24' }, resources: [
+                  { type: 'bastion', name: 'bas-hub-weu', properties: { sku: 'Standard' } },
+                ] },
+              ],
+            } as any,
+          ],
+        },
+        {
+          name: 'rg-workload-weu',
+          resources: [
+            {
+              type: 'vnet', name: 'vnet-spoke-weu',
+              properties: { addressSpace: '10.1.0.0/16' },
+              subnets: [
+                { type: 'subnet', name: 'subnet-web-weu', properties: { addressPrefix: '10.1.0.0/24' } },
+                { type: 'subnet', name: 'subnet-app-weu', properties: { addressPrefix: '10.1.1.0/24' }, resources: [
+                  { type: 'vm', name: 'vm-weu-01', properties: { vmSize: 'Standard_D2s_v5', availabilityZone: 1 } },
+                  { type: 'vm', name: 'vm-weu-02', properties: { vmSize: 'Standard_D2s_v5', availabilityZone: 2 } },
+                ] },
+                { type: 'subnet', name: 'subnet-data-weu', properties: { addressPrefix: '10.1.2.0/24' } },
+              ],
+            } as any,
+          ],
+        },
+        {
+          name: 'rg-apim-weu',
+          resources: [
+            {
+              type: 'vnet', name: 'vnet-apim-weu',
+              properties: { addressSpace: '10.4.0.0/16' },
+              subnets: [
+                { type: 'subnet', name: 'subnet-apim-weu', properties: { addressPrefix: '10.4.0.0/24' }, resources: [
+                  { type: 'apiManagement', name: 'apim-weu', properties: { sku: 'Developer', kind: 'VNET' } },
+                ] },
+              ],
+            } as any,
+          ],
+        },
+      ],
+    }],
+    connections: [
+      { from: 'vnet-hub-weu', to: 'vnet-spoke-weu', style: 'peering', label: 'Hub-Spoke Peering' },
+      { from: 'vnet-hub-weu', to: 'vnet-apim-weu', style: 'peering', label: 'Hub-APIM Peering' },
+    ],
+  };
+
+  const builder2 = new DrawIOBuilder();
+  const xml2 = builder2.generate(hubSpoke);
+  const output2 = resolve(__dirname, '../output/test-hub-spoke.drawio');
+  writeFileSync(output2, xml2);
+  console.log(`   ✅ Generated: ${output2}`);
+
   // Summary
   console.log('\n' + '='.repeat(60));
   console.log('✨ Test completed!');

@@ -15,11 +15,20 @@ interface CellInfo {
   position: Position;
 }
 
+interface ContainerBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export class DrawIOBuilder {
   private cellMap: Map<string, CellInfo> = new Map();
   private idCounter = 0;
   private usedResourceTypes: Set<string> = new Set();
   private usedConnectionStyles: Set<string> = new Set();
+  /** Absolute bounds of every container (keyed by cell id) */
+  private containerAbsBounds: Map<string, ContainerBounds> = new Map();
 
   constructor() {
     resetCounter();
@@ -75,6 +84,7 @@ export class DrawIOBuilder {
     this.idCounter = 0;
     this.usedResourceTypes.clear();
     this.usedConnectionStyles.clear();
+    this.containerAbsBounds.clear();
 
     const diagram = doc.ele('diagram', {
       id: generateCellId('diagram'),
@@ -640,6 +650,109 @@ export class DrawIOBuilder {
 
   // ==================== CONNECTIONS ====================
 
+  /**
+   * Get the absolute centre of a cell (container or resource).
+   */
+  private getAbsoluteCenter(cell: CellInfo): Position {
+    const parentBounds = this.containerAbsBounds.get(cell.parentId);
+    const absX = cell.position.x + (parentBounds?.x ?? 0);
+    const absY = cell.position.y + (parentBounds?.y ?? 0);
+    const own = this.containerAbsBounds.get(cell.id);
+    if (own) {
+      return { x: absX + own.width / 2, y: absY + own.height / 2 };
+    }
+    return { x: absX + 32, y: absY + 32 }; // default icon centre
+  }
+
+  /**
+   * Get the absolute right edge X of a cell (container or resource icon).
+   */
+  private getAbsoluteRightEdge(cell: CellInfo): number {
+    const parentBounds = this.containerAbsBounds.get(cell.parentId);
+    const absX = cell.position.x + (parentBounds?.x ?? 0);
+    const own = this.containerAbsBounds.get(cell.id);
+    return absX + (own?.width ?? 64);
+  }
+
+  /**
+   * Collect the IDs of a cell and all its ancestor containers.
+   */
+  private getAncestorIds(cell: CellInfo): Set<string> {
+    const ids = new Set<string>();
+    ids.add(cell.id);
+    let pid = cell.parentId;
+    while (pid && pid !== '0') {
+      ids.add(pid);
+      // Walk upward — find any cellMap entry whose id matches pid
+      let found = false;
+      for (const c of this.cellMap.values()) {
+        if (c.id === pid) {
+          pid = c.parentId;
+          found = true;
+          break;
+        }
+      }
+      if (!found) break;
+    }
+    return ids;
+  }
+
+  /**
+   * Check if inner bounds are geometrically contained within outer bounds.
+   */
+  private isInsideBounds(inner: ContainerBounds, outer: ContainerBounds): boolean {
+    return inner.x >= outer.x && inner.y >= outer.y &&
+      inner.x + inner.width <= outer.x + outer.width &&
+      inner.y + inner.height <= outer.y + outer.height;
+  }
+
+  /**
+   * Detect containers that lie vertically between `from` and `to` and would
+   * obstruct a straight edge.  Skips the source, target, any container
+   * that is an ancestor of either, and any container that is geometrically
+   * inside the source or target (descendants / children).
+   */
+  private findObstructingContainers(
+    from: CellInfo,
+    to: CellInfo,
+  ): ContainerBounds[] {
+    const fromCenter = this.getAbsoluteCenter(from);
+    const toCenter = this.getAbsoluteCenter(to);
+
+    const topY = Math.min(fromCenter.y, toCenter.y);
+    const botY = Math.max(fromCenter.y, toCenter.y);
+
+    // If vertical distance is very small there's nothing to obstruct
+    if (botY - topY < 100) return [];
+
+    const skipIds = new Set([...this.getAncestorIds(from), ...this.getAncestorIds(to)]);
+
+    // Get bounds of source and target so we can skip their children
+    const srcBounds = this.containerAbsBounds.get(from.id);
+    const tgtBounds = this.containerAbsBounds.get(to.id);
+
+    const obstructions: ContainerBounds[] = [];
+    for (const [id, bounds] of this.containerAbsBounds) {
+      if (skipIds.has(id)) continue;
+      // Skip containers that are geometrically inside source or target
+      if (srcBounds && this.isInsideBounds(bounds, srcBounds)) continue;
+      if (tgtBounds && this.isInsideBounds(bounds, tgtBounds)) continue;
+      // Container must be vertically *between* source and target
+      const cTop = bounds.y;
+      const cBot = bounds.y + bounds.height;
+      const cMid = (cTop + cBot) / 2;
+      if (cMid <= topY || cMid >= botY) continue;
+      // Container must horizontally overlap with the source–target band
+      const leftX = Math.min(fromCenter.x, toCenter.x) - 50;
+      const rightX = Math.max(fromCenter.x, toCenter.x) + 50;
+      const cLeft = bounds.x;
+      const cRight = bounds.x + bounds.width;
+      if (cRight < leftX || cLeft > rightX) continue;
+      obstructions.push(bounds);
+    }
+    return obstructions;
+  }
+
   private buildConnections(parent: any, connections: Connection[]): void {
     for (const conn of connections) {
       const from = this.findCell(conn.from);
@@ -654,7 +767,7 @@ export class DrawIOBuilder {
         this.usedConnectionStyles.add(conn.style);
       }
 
-      let style = 'edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;fontSize=10;labelBackgroundColor=#FFFFFF;';
+      let style = 'edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;fontSize=10;labelBackgroundColor=#FFFFFF;';
       
       switch (conn.style) {
         case 'dashed':
@@ -671,18 +784,44 @@ export class DrawIOBuilder {
           break;
       }
 
-      parent.ele('mxCell', {
+      // Check if containers lie between source and target
+      const obstructions = this.findObstructingContainers(from, to);
+
+      const edgeCell = parent.ele('mxCell', {
         id: this.nextId(),
         value: conn.label || '',
-        style,
+        style: obstructions.length > 0
+          ? style + 'exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;'
+          : style,
         edge: '1',
         parent: '1',
         source: from.id,
         target: to.id,
-      }).ele('mxGeometry', {
-        relative: '1',
-        as: 'geometry',
       });
+
+      if (obstructions.length > 0) {
+        // Route around the right side of all obstructions
+        const fromRight = this.getAbsoluteRightEdge(from);
+        const toRight = this.getAbsoluteRightEdge(to);
+        const obstRight = Math.max(...obstructions.map(b => b.x + b.width));
+        const waypointX = Math.max(fromRight, toRight, obstRight) + 40;
+
+        const fromCenter = this.getAbsoluteCenter(from);
+        const toCenter = this.getAbsoluteCenter(to);
+
+        const geo = edgeCell.ele('mxGeometry', {
+          relative: '1',
+          as: 'geometry',
+        });
+        const pts = geo.ele('Array', { as: 'points' });
+        pts.ele('mxPoint', { x: String(waypointX), y: String(fromCenter.y) });
+        pts.ele('mxPoint', { x: String(waypointX), y: String(toCenter.y) });
+      } else {
+        edgeCell.ele('mxGeometry', {
+          relative: '1',
+          as: 'geometry',
+        });
+      }
     }
   }
 
@@ -820,6 +959,14 @@ export class DrawIOBuilder {
       width: String(opts.width),
       height: String(opts.height),
       as: 'geometry',
+    });
+
+    // Track absolute bounds for edge-routing calculations
+    const parentBounds = this.containerAbsBounds.get(opts.parentId);
+    const absX = opts.x + (parentBounds?.x ?? 0);
+    const absY = opts.y + (parentBounds?.y ?? 0);
+    this.containerAbsBounds.set(opts.id, {
+      x: absX, y: absY, width: opts.width, height: opts.height,
     });
   }
 
