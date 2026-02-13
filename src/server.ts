@@ -384,9 +384,15 @@ app.post('/api/generate/stream', async (req, res) => {
       if (!host.endsWith('.openai.azure.com') && !host.endsWith('.cognitiveservices.azure.com')) {
         return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint host. Must be *.openai.azure.com or *.cognitiveservices.azure.com.' });
       }
-      // Validate deploymentName to prevent path manipulation
-      if (typeof deploymentName !== 'string' || !/^[A-Za-z0-9._-]+$/.test(deploymentName)) {
-        return res.status(400).json({ error: 'Invalid deploymentName. Use only letters, numbers, ".", "-", and "_".' });
+      const port = url.port || '443';
+      const hostWithPort = `${host}:${port}`;
+      if (!isAllowedAoaiHost(hostWithPort)) {
+        return res.status(400).json({
+          error: 'Azure OpenAI endpoint host is not in the allowed list.',
+        });
+      }
+      if (!isValidDeploymentName(deploymentName)) {
+        return res.status(400).json({ error: 'Invalid deploymentName. Must contain only letters, numbers, hyphens, or underscores, and be at most 64 characters long.' });
       }
       url.hash = '';
       url.pathname = `/openai/deployments/${encodeURIComponent(deploymentName)}/chat/completions`;
