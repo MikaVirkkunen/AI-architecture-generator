@@ -338,6 +338,10 @@ app.post('/api/generate/stream', async (req, res) => {
     if (!isValidAzureEndpoint(endpoint)) {
       return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint. Must be an https://*.openai.azure.com or *.cognitiveservices.azure.com URL.' });
     }
+    // Validate deploymentName to prevent path manipulation and enforce a safe character set
+    if (typeof deploymentName !== 'string' || !/^[A-Za-z0-9._-]+$/.test(deploymentName)) {
+      return res.status(400).json({ error: 'Invalid deploymentName. Use only letters, numbers, ".", "-", and "_".' });
+    }
 
     // Set up SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
