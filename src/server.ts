@@ -60,11 +60,15 @@ function isValidAzureEndpoint(url: string): boolean {
 
 /**
  * Run an Azure CLI command safely using execFileSync (no shell interpolation).
+ * On Windows, `az` is installed as `az.cmd` which requires shell resolution,
+ * so we use the full executable name per platform.
  * @param args - Array of arguments to pass to `az` (excluding `-o json`)
  */
+const AZ_CMD = process.platform === 'win32' ? 'az.cmd' : 'az';
+
 function azCli(args: string[]): any {
   try {
-    const output = execFileSync('az', [...args, '-o', 'json'], {
+    const output = execFileSync(AZ_CMD, [...args, '-o', 'json'], {
       encoding: 'utf-8',
       timeout: 30000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -150,7 +154,7 @@ app.post('/api/tenants/:tenantId/select', (req, res) => {
   if (err) return res.status(400).json({ error: err });
 
   try {
-    execFileSync('az', ['login', '--tenant', tenantId, '--allow-no-subscriptions', '-o', 'none'], {
+    execFileSync(AZ_CMD, ['login', '--tenant', tenantId, '--allow-no-subscriptions', '-o', 'none'], {
       encoding: 'utf-8',
       timeout: 60000,
       stdio: ['pipe', 'pipe', 'pipe'],
