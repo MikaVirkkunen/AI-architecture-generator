@@ -352,9 +352,10 @@ function buildResourceGroups(response: ParsedResponse, region?: string): Resourc
     const count = res.count || 1;
 
     for (let i = 0; i < count; i++) {
+      const safeName = res.name.length > 256 ? res.name.substring(0, 256) : res.name;
       const name = count > 1 
-        ? `${res.name.replace(/-?\d+$/, '')}-${String(i + 1).padStart(2, '0')}`
-        : res.name;
+        ? `${safeName.replace(/-?\d+$/, '')}-${String(i + 1).padStart(2, '0')}`
+        : safeName;
 
       const resource: Resource = {
         type,

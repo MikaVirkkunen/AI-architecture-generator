@@ -96,11 +96,17 @@ export function DiagramViewer({ result }: DiagramViewerProps) {
           setExporting(null);
           const title = result?.architecture?.title || 'architecture';
           if (msg.format === 'png' && msg.data) {
+            // Validate that data is a base64 data URI, not an arbitrary URL
+            if (typeof msg.data !== 'string' || !msg.data.startsWith('data:image/png;base64,')) {
+              console.warn('Unexpected PNG export data format, ignoring');
+              return;
+            }
             const a = document.createElement('a');
             a.href = msg.data;
             a.download = `${title}.png`;
             a.click();
           } else if (msg.format === 'svg' && msg.data) {
+            if (typeof msg.data !== 'string') return;
             const blob = new Blob([msg.data], { type: 'image/svg+xml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
