@@ -20,6 +20,25 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 /**
+ * Returns true if the given "hostname:port" combination is explicitly allowed
+ * for Azure OpenAI requests. The allow-list is provided via the
+ * AZURE_OPENAI_ALLOWED_HOSTS environment variable as a comma-separated list
+ * of exact host[:port] values, for example:
+ *   AZURE_OPENAI_ALLOWED_HOSTS="myinstance.openai.azure.com:443,other.cognitiveservices.azure.com:443"
+ */
+function isAllowedAoaiHost(hostWithPort: string): boolean {
+  const raw = process.env.AZURE_OPENAI_ALLOWED_HOSTS;
+  if (!raw) {
+    return false;
+  }
+  const entries = raw
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h.length > 0);
+  return entries.includes(hostWithPort.toLowerCase());
+}
+
+/**
  * Returns true if the given endpoint URL belongs to a trusted Azure AI host.
  * This avoids substring checks that can be bypassed with crafted URLs.
  */
@@ -562,6 +581,13 @@ app.post('/api/generate', async (req, res) => {
         const host = url.hostname.toLowerCase();
         if (!host.endsWith('.openai.azure.com') && !host.endsWith('.cognitiveservices.azure.com')) {
           return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint host. Must be *.openai.azure.com or *.cognitiveservices.azure.com.' });
+        }
+        const port = url.port || '443';
+        const hostWithPort = `${host}:${port}`;
+        if (!isAllowedAoaiHost(hostWithPort)) {
+          return res.status(400).json({
+            error: 'Azure OpenAI endpoint host is not in the allowed list.',
+          });
         }
         if (!isValidDeploymentName(deploymentName)) {
           return res.status(400).json({ error: 'Invalid deploymentName. Must contain only letters, numbers, hyphens, or underscores, and be at most 64 characters long.' });
