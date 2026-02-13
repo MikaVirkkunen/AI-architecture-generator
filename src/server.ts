@@ -543,6 +543,25 @@ app.post('/api/generate', async (req, res) => {
       if (!isValidAzureEndpoint(endpoint)) {
         return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint. Must be an https://*.openai.azure.com or *.cognitiveservices.azure.com URL.' });
       }
+      // Additional strict validation to prevent SSRF: parse and enforce allowed hosts/protocol.
+      let endpointUrl: URL;
+      try {
+        endpointUrl = new URL(endpoint);
+      } catch {
+        return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint URL format.' });
+      }
+
+      if (endpointUrl.protocol !== 'https:') {
+        return res.status(400).json({ error: 'Azure OpenAI endpoint must use HTTPS.' });
+      }
+
+      const hostname = endpointUrl.hostname.toLowerCase();
+      const allowedSuffixes = ['.openai.azure.com', '.cognitiveservices.azure.com'];
+      const isAllowedHost = allowedSuffixes.some(suffix => hostname === suffix.slice(1) || hostname.endsWith(suffix));
+      if (!isAllowedHost) {
+        return res.status(400).json({ error: 'Azure OpenAI endpoint host must be *.openai.azure.com or *.cognitiveservices.azure.com.' });
+      }
+
       if (!isValidDeploymentName(deploymentName)) {
         return res.status(400).json({ error: 'Invalid deploymentName. Must contain only letters, numbers, hyphens, or underscores, and be at most 64 characters long.' });
       }
@@ -555,7 +574,8 @@ app.post('/api/generate', async (req, res) => {
         });
       }
 
-      const aoaiUrl = `${endpoint.replace(/\/$/, '')}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-01`;
+      // Build the AOAI URL from the normalized origin to avoid SSRF via crafted paths.
+      const aoaiUrl = `${endpointUrl.origin}/openai/deployments/${deploymentName}/chat/completions?api-version=2024-02-01`;
 
       // Build messages array (with optional refinement)
       const messages: Array<{ role: string; content: string }> = [
