@@ -59,19 +59,23 @@ function isValidAzureEndpoint(url: string): boolean {
 }
 
 /**
- * Run an Azure CLI command safely using execFileSync (no shell interpolation).
- * On Windows, `az` is installed as `az.cmd` which requires shell resolution,
- * so we use the full executable name per platform.
+ * Run an Azure CLI command safely using execFileSync.
+ * Arguments are passed as an array to prevent shell injection.
+ * On Windows, `az` is a .cmd batch file that requires a shell to execute,
+ * so we enable shell: true there. Input validation (UUID/ID regex) is the
+ * primary security layer — all user-controlled values are validated before
+ * reaching this function.
  * @param args - Array of arguments to pass to `az` (excluding `-o json`)
  */
-const AZ_CMD = process.platform === 'win32' ? 'az.cmd' : 'az';
+const IS_WINDOWS = process.platform === 'win32';
 
 function azCli(args: string[]): any {
   try {
-    const output = execFileSync(AZ_CMD, [...args, '-o', 'json'], {
+    const output = execFileSync('az', [...args, '-o', 'json'], {
       encoding: 'utf-8',
       timeout: 30000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: IS_WINDOWS,
     });
     return JSON.parse(output);
   } catch {
@@ -154,10 +158,11 @@ app.post('/api/tenants/:tenantId/select', (req, res) => {
   if (err) return res.status(400).json({ error: err });
 
   try {
-    execFileSync(AZ_CMD, ['login', '--tenant', tenantId, '--allow-no-subscriptions', '-o', 'none'], {
+    execFileSync('az', ['login', '--tenant', tenantId, '--allow-no-subscriptions', '-o', 'none'], {
       encoding: 'utf-8',
       timeout: 60000,
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: IS_WINDOWS,
     });
     res.json({ ok: true });
   } catch (error: any) {
