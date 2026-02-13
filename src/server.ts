@@ -429,11 +429,28 @@ app.post('/api/generate/stream', async (req, res) => {
       messages.push({ role: 'user', content: prompt });
     }
 
-    // Build Azure OpenAI URL from validated endpoint — inline so static analysis can trace the validation
-    const validatedUrl = new URL(endpoint);
-    validatedUrl.pathname = `/openai/deployments/${encodeURIComponent(deploymentName)}/chat/completions`;
-    validatedUrl.searchParams.set('api-version', '2024-02-01');
-    const aoaiUrl = validatedUrl.toString();
+    // Build Azure OpenAI URL from validated endpoint, enforcing scheme and allowed hosts
+    let aoaiUrl: string;
+    try {
+      const url = new URL(endpoint);
+      // Enforce HTTPS and allowed Azure OpenAI hostnames to prevent SSRF
+      if (url.protocol !== 'https:') {
+        return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint protocol. Only https is allowed.' });
+      }
+      const host = url.hostname.toLowerCase();
+      const isOpenAIDomain = host.endsWith('.openai.azure.com');
+      const isCognitiveDomain = host.endsWith('.cognitiveservices.azure.com');
+      if (!isOpenAIDomain && !isCognitiveDomain) {
+        return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint host. Must be *.openai.azure.com or *.cognitiveservices.azure.com.' });
+      }
+      url.hash = '';
+      url.pathname = `/openai/deployments/${encodeURIComponent(deploymentName)}/chat/completions`;
+      url.search = '';
+      url.searchParams.set('api-version', '2024-02-01');
+      aoaiUrl = url.toString();
+    } catch {
+      return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint URL.' });
+    }
 
     console.log(`  [AI/Stream] Generating with Azure OpenAI: ${deploymentName}`);
 
