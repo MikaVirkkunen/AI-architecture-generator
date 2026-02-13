@@ -20,6 +20,42 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 /**
+ * Validate that an Azure OpenAI endpoint is a safe HTTPS URL
+ * pointing to an allowed Azure domain.
+ */
+function getSafeAzureEndpoint(endpoint: string): URL | null {
+  try {
+    const url = new URL(endpoint);
+
+    // Require HTTPS
+    if (url.protocol !== 'https:') {
+      return null;
+    }
+
+    const hostname = url.hostname.toLowerCase();
+
+    const allowedSuffixes = [
+      '.openai.azure.com',
+      '.cognitiveservices.azure.com',
+    ];
+
+    const isAllowedHost = allowedSuffixes.some(suffix =>
+      hostname === `localhost${suffix}` // impossible, but keeps pattern explicit
+        ? false
+        : hostname.endsWith(suffix),
+    );
+
+    if (!isAllowedHost) {
+      return null;
+    }
+
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Returns true if the given endpoint URL belongs to a trusted Azure AI host.
  * This avoids substring checks that can be bypassed with crafted URLs.
  */
@@ -572,7 +608,8 @@ app.post('/api/generate', async (req, res) => {
 
     // AI mode: use Azure OpenAI with CLI-acquired bearer token
     if (endpoint && deploymentName) {
-      if (!isValidAzureEndpoint(endpoint)) {
+      const safeEndpointUrl = typeof endpoint === 'string' ? getSafeAzureEndpoint(endpoint) : null;
+      if (!safeEndpointUrl) {
         return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint. Must be an https://*.openai.azure.com or *.cognitiveservices.azure.com URL.' });
       }
       if (!isValidDeploymentName(deploymentName)) {
@@ -588,7 +625,7 @@ app.post('/api/generate', async (req, res) => {
       }
 
       // Build Azure OpenAI URL from validated endpoint — inline so static analysis can trace the validation
-      const validatedUrl = new URL(endpoint);
+      const validatedUrl = safeEndpointUrl;
       validatedUrl.pathname = `/openai/deployments/${encodeURIComponent(deploymentName)}/chat/completions`;
       validatedUrl.searchParams.set('api-version', '2024-02-01');
       const aoaiUrl = validatedUrl.toString();
