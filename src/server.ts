@@ -18,6 +18,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Basic validation for Azure OpenAI deployment names to prevent SSRF via path injection.
+// Allows only alphanumeric characters, hyphens, and underscores, with a reasonable length limit.
+function isValidDeploymentName(name: unknown): name is string {
+  if (typeof name !== 'string') {
+    return false;
+  }
+  // Disallow path separators and query/fragment characters implicitly by allow-listing safe chars.
+  const DEPLOYMENT_NAME_REGEX = /^[A-Za-z0-9_-]{1,64}$/;
+  return DEPLOYMENT_NAME_REGEX.test(name);
+}
+
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
@@ -506,6 +517,9 @@ app.post('/api/generate', async (req, res) => {
     if (endpoint && deploymentName) {
       if (!isValidAzureEndpoint(endpoint)) {
         return res.status(400).json({ error: 'Invalid Azure OpenAI endpoint. Must be an https://*.openai.azure.com or *.cognitiveservices.azure.com URL.' });
+      }
+      if (!isValidDeploymentName(deploymentName)) {
+        return res.status(400).json({ error: 'Invalid deploymentName. Must contain only letters, numbers, hyphens, or underscores, and be at most 64 characters long.' });
       }
       console.log(`  [AI] Generating with Azure OpenAI: ${deploymentName}`);
 
